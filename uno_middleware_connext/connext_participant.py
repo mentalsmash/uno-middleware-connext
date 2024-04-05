@@ -32,6 +32,7 @@ from uno.registry.cell import Cell
 from uno.registry.lan_descriptor import LanDescriptor
 from uno.registry.key_id import KeyId
 from uno.core.render import Templates
+from uno.core.wg import WireGuardConfig
 
 from uno.middleware import Participant
 
@@ -48,9 +49,9 @@ def locate_rti_license(search_path: list[Path] | None = None) -> Path | None:
     if root in searched:
       return None
     rti_license = root / "rti_license.dat"
-    log.debug("checking RTI license candidate: {}", rti_license)
+    log.activity("checking RTI license candidate: {}", rti_license)
     if rti_license.is_file():
-      log.debug("RTI license found in {}", root)
+      log.activity("RTI license found in {}", root)
       return rti_license
     searched.add(root)
     return None
@@ -67,6 +68,8 @@ def locate_rti_license(search_path: list[Path] | None = None) -> Path | None:
     if rti_license.is_file():
       log.info("detected RTI_LICENSE_FILE = {}", rti_license)
       return rti_license
+    else:
+      log.warning("invalid RTI_LICENSE_FILE := {}", rti_license_env)
 
   default_path = [Path.cwd()]
   connext_home_env = os.getenv("CONNEXTDDS_DIR", os.getenv("NDDSHOME"))
@@ -115,7 +118,6 @@ class ConnextParticipant(Participant):
 
   def __init__(self, *args, **kwargs) -> None:
     super().__init__(*args, **kwargs)
-
     self._qos_provider = None
     self._dp = None
     self._waitset = None
@@ -132,14 +134,15 @@ class ConnextParticipant(Participant):
 
   @cached_property
   def rti_license(self) -> Path:
-    license = self.agent.root / "rti_license.dat"
+    license = self.root / "rti_license.dat"
     if not license.exists():
-      user_license = locate_rti_license(search_path=[self.agent.root])
+      user_license = locate_rti_license(search_path=[self.root])
       if not user_license or not user_license.is_file():
         raise RuntimeError("please specify an RTI license file")
       license.write_bytes(user_license.read_bytes())
       log.warning("cached RTI license: {} → {}", user_license, license)
     return license
+
 
 
   def uvn_info(self,
@@ -260,10 +263,6 @@ BACKBONE:
         }
     
       def _site_to_lan_status(site, reachable):
-        # return {
-        #   "lan": self.agent.new_child(LanDescriptor, _site_to_descriptor(site), save=False),
-        #   "reachable": reachable,
-        # }
         return (
           self.agent.new_child(LanDescriptor, _site_to_descriptor(site), save=False),
           reachable,
@@ -285,8 +284,8 @@ BACKBONE:
       }
     elif topic == UvnTopic.BACKBONE:
       return {
-        "uvn": data["id.uvn"],
-        "cell": data["id.n"],
+        "uvn": data["cell.uvn"],
+        "cell": data["cell.n"],
         "registry_id": data["registry_id"],
         "package": data["package"],
       }
@@ -294,38 +293,38 @@ BACKBONE:
 
   @cached_property
   def participant_xml_config(self) -> Path:
-    config = self.agent.root / "uno_qos_profiles.xml"
-    if isinstance(self.agent.owner, Uvn):
+    config = self.root / "uno_qos_profiles.xml"
+    if isinstance(self.owner, Uvn):
       self._generate_dds_xml_config_uvn(config)
-    elif isinstance(self.agent.owner, Cell):
+    elif isinstance(self.owner, Cell):
       self._generate_dds_xml_config_cell(config)
     return config
 
 
   def _generate_dds_xml_config_uvn(self, output: Path) -> None:
-    initial_peers = [p.address for p in self.agent.root_vpn.config.peers]
+    initial_peers = [p.address for p in self.root_vpn_config.peers] if self.root_vpn_config else []
     initial_peers = [f"[0]@{p}" for p in initial_peers]
 
-    key_id = KeyId.from_uvn(self.agent.registry.uvn)
+    key_id = KeyId.from_uvn(self.registry.uvn)
     from . import data
     with as_file(files(data).joinpath("uno.xml")) as tmplt_str:
       tmplt = Templates.compile(tmplt_str.read_text())
     Templates.generate(output, tmplt, {
-      "uvn": self.agent.registry.uvn,
+      "uvn": self.registry.uvn,
       "cell": None,
       "initial_peers": initial_peers,
-      "timing": self.agent.registry.uvn.settings.timing_profile,
-      "license_file": self.agent.registry.rti_license.read_text(),
-      "ca_cert": self.agent.id_db.backend.ca.cert,
-      "perm_ca_cert": self.agent.id_db.backend.perm_ca.cert,
-      "cert": self.agent.id_db.backend.cert(key_id),
-      "key": self.agent.id_db.backend.key(key_id),
-      "governance": self.agent.id_db.backend.governance,
-      "permissions": self.agent.id_db.backend.permissions(key_id),
-      "enable_dds_security": self.agent.uvn.settings.enable_dds_security,
-      "domain": self.agent.uvn.settings.dds_domain,
-      "domain_tag": self.agent.uvn.name,
-      "rti_license": self.agent.registry.rti_license,
+      "timing": self.registry.uvn.settings.timing_profile,
+      "license_file": self.rti_license.read_text(),
+      "ca_cert": self.registry.id_db.backend.ca.cert,
+      "perm_ca_cert": self.registry.id_db.backend.perm_ca.cert,
+      "cert": self.registry.id_db.backend.cert(key_id),
+      "key": self.registry.id_db.backend.key(key_id),
+      "governance": self.registry.id_db.backend.governance,
+      "permissions": self.registry.id_db.backend.permissions(key_id),
+      "enable_dds_security": self.registry.uvn.settings.enable_dds_security,
+      "domain": self.registry.uvn.settings.dds_domain,
+      "domain_tag": self.registry.uvn.name,
+      "rti_license": self.registry.rti_license,
     })
   
 
@@ -334,46 +333,46 @@ BACKBONE:
     # and all addresses for peers connected directly to this one
     backbone_peers = {
       peer_b[1]
-        for peer_a in self.agent.deployment.peers.values()
+        for peer_a in self.registry.deployment.peers.values()
           for peer_b_id, peer_b in peer_a["peers"].items()
-            if peer_b[0] == 0 or peer_b_id == self.agent.owner.id
+            if peer_b[0] == 0 or peer_b_id == self.owner.id
     } - {
-      vpn.config.intf.address
-        for vpn in self.agent.backbone_vpns
+      config.intf.address
+        for config in self.backbone_vpn_configs
     }
     initial_peers = [
       *backbone_peers,
-      *([self.agent.root_vpn.config.peers[0].address] if self.agent.root_vpn else []),
+      *([self.root_vpn_config.peers[0].address] if self.root_vpn_config else []),
     ]
     initial_peers = [f"[0]@{p}" for p in initial_peers]
 
-    key_id = KeyId.from_uvn(self.agent.owner)
+    key_id = KeyId.from_uvn(self.owner)
     from . import data
     with as_file(files(data).joinpath("uno.xml")) as tmplt_str:
       tmplt = Templates.compile(tmplt_str.read_text())
     Templates.generate(output, tmplt, {
-      "uvn": self.agent.uvn,
-      "cell": self.agent.owner,
+      "uvn": self.registry.uvn,
+      "cell": self.owner,
       "initial_peers": initial_peers,
-      "timing": self.agent.uvn.settings.timing_profile,
-      "license_file": self.agent.rti_license.read_text(),
-      "ca_cert": self.agent.id_db.backend.ca.cert,
-      "perm_ca_cert": self.agent.id_db.backend.perm_ca.cert,
-      "cert": self.agent.id_db.backend.cert(key_id),
-      "key": self.agent.id_db.backend.key(key_id),
-      "governance": self.agent.id_db.backend.governance,
-      "permissions": self.agent.id_db.backend.permissions(key_id),
-      "enable_dds_security": self.agent.uvn.settings.enable_dds_security,
-      "domain": self.agent.uvn.settings.dds_domain,
-      "domain_tag": self.agent.uvn.name,
-      "rti_license": self.agent.registry.rti_license,
+      "timing": self.registry.uvn.settings.timing_profile,
+      "license_file": self.rti_license.read_text(),
+      "ca_cert": self.registry.id_db.backend.ca.cert,
+      "perm_ca_cert": self.registry.id_db.backend.perm_ca.cert,
+      "cert": self.registry.id_db.backend.cert(key_id),
+      "key": self.registry.id_db.backend.key(key_id),
+      "governance": self.registry.id_db.backend.governance,
+      "permissions": self.registry.id_db.backend.permissions(key_id),
+      "enable_dds_security": self.registry.uvn.settings.enable_dds_security,
+      "domain": self.registry.uvn.settings.dds_domain,
+      "domain_tag": self.registry.uvn.name,
+      "rti_license": self.rti_license,
     })
 
 
   def start(self) -> None:
     # HACK set NDDSHOME so that the Connext Python API finds the license file
     import os
-    os.environ["NDDSHOME"] = str(self.agent.root)
+    os.environ["NDDSHOME"] = str(self.root)
     log.activity("NDDSHOME: {}", os.environ["NDDSHOME"])
 
     qos_provider = dds.QosProvider(str(self.participant_xml_config))
@@ -534,6 +533,10 @@ BACKBONE:
       cond.trigger_value = False
       active_user.append(cond)
     return (False, active_writers, active_readers, active_data, active_user)
+
+
+  def install(self) -> None:
+    _ = self.rti_license
 
 
   @property
