@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "uno_middleware_connext"
-version = "1.1.0"
+version = "1.1.1"
 description = "Middleware implementation for uno based on RTI Connext DDS"
 authors = ["Andrea Sorbini <as@mentalsmash.org>"]
 readme = "README.md"
