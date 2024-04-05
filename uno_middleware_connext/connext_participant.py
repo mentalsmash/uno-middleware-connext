@@ -302,9 +302,6 @@ BACKBONE:
 
 
   def _generate_dds_xml_config_uvn(self, output: Path) -> None:
-    initial_peers = [p.address for p in self.root_vpn_config.peers] if self.root_vpn_config else []
-    initial_peers = [f"[0]@{p}" for p in initial_peers]
-
     key_id = KeyId.from_uvn(self.registry.uvn)
     from . import data
     with as_file(files(data).joinpath("uno.xml")) as tmplt_str:
@@ -312,7 +309,7 @@ BACKBONE:
     Templates.generate(output, tmplt, {
       "uvn": self.registry.uvn,
       "cell": None,
-      "initial_peers": initial_peers,
+      "initial_peers": [f"[0]@{p}" for p in self.initial_peers],
       "timing": self.registry.uvn.settings.timing_profile,
       "license_file": self.rti_license.read_text(),
       "ca_cert": self.registry.id_db.backend.ca.cert,
@@ -329,23 +326,6 @@ BACKBONE:
   
 
   def _generate_dds_xml_config_cell(self, output: Path) -> None:
-    # Pick the address of the first backbone port for every peer
-    # and all addresses for peers connected directly to this one
-    backbone_peers = {
-      peer_b[1]
-        for peer_a in self.registry.deployment.peers.values()
-          for peer_b_id, peer_b in peer_a["peers"].items()
-            if peer_b[0] == 0 or peer_b_id == self.owner.id
-    } - {
-      config.intf.address
-        for config in self.backbone_vpn_configs
-    }
-    initial_peers = [
-      *backbone_peers,
-      *([self.root_vpn_config.peers[0].address] if self.root_vpn_config else []),
-    ]
-    initial_peers = [f"[0]@{p}" for p in initial_peers]
-
     key_id = KeyId.from_uvn(self.owner)
     from . import data
     with as_file(files(data).joinpath("uno.xml")) as tmplt_str:
@@ -353,7 +333,7 @@ BACKBONE:
     Templates.generate(output, tmplt, {
       "uvn": self.registry.uvn,
       "cell": self.owner,
-      "initial_peers": initial_peers,
+      "initial_peers": [f"[0]@{p}" for p in self.initial_peers],
       "timing": self.registry.uvn.settings.timing_profile,
       "license_file": self.rti_license.read_text(),
       "ca_cert": self.registry.id_db.backend.ca.cert,
