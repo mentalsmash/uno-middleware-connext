@@ -522,3 +522,7 @@ BACKBONE:
   @property
   def cell_agent_package_files(self) -> Generator[Path, None, None]:
     yield self.rti_license
+
+
+  def agent_install_guide_section(self) -> str | None:
+    return None

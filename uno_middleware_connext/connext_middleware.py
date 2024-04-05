@@ -23,3 +23,20 @@ class ConnextMiddleware(Middleware):
   CONDITION = ConnextCondition
   PARTICIPANT = ConnextParticipant
 
+  @property
+  def install_instructions(self) -> str | None:
+    import uno_middleware_connext
+    return """\
+# Install RTI Connext DDS middleware
+pip install git+https://github.com/mentalsmash/uno-middleware-connext@{version}
+""".format(version=uno_middleware_connext.__version__)
+
+
+  def define_uvn_instructions(self) -> str | None:
+    import uno_middleware_connext
+    return """\
+# Point uno to a valid RTI license file
+export RTI_LICENSE_FILE=/path/to/rti_license.dat
+""".format(version=uno_middleware_connext.__version__)
+
+
