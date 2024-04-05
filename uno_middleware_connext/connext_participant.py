@@ -14,6 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 ###############################################################################
+import os
+from typing import Generator
 from pathlib import Path
 import ipaddress
 from functools import cached_property
@@ -23,7 +25,7 @@ import rti.connextdds as dds
 
 from uno.core.ip import ipv4_from_bytes, ipv4_to_bytes, ipv4_netmask_to_cidr
 from uno.core.time import Timestamp
-from uno.registry.dds import UvnTopic
+from uno.registry.topic import UvnTopic
 from uno.core.log import Logger
 from uno.registry.uvn import Uvn
 from uno.registry.cell import Cell
@@ -35,6 +37,47 @@ from uno.middleware import Participant
 
 from .connext_condition import ConnextCondition
 from .connext_handle import ConnextHandle
+
+log = Logger.sublogger("connext")
+
+
+def locate_rti_license(search_path: list[Path] | None = None) -> Path | None:
+  searched = set()
+  def _search_dir(root: Path):
+    root = root.resolve()
+    if root in searched:
+      return None
+    rti_license = root / "rti_license.dat"
+    log.debug("checking RTI license candidate: {}", rti_license)
+    if rti_license.is_file():
+      log.debug("RTI license found in {}", root)
+      return rti_license
+    searched.add(root)
+    return None
+
+  for root in search_path:
+    rti_license = _search_dir(root)
+    if rti_license:
+      return rti_license
+
+  # Check if there is already a license in the specified directory
+  rti_license_env = os.getenv("RTI_LICENSE_FILE")
+  if rti_license_env:
+    rti_license = Path(rti_license_env)
+    if rti_license.is_file():
+      log.info("detected RTI_LICENSE_FILE = {}", rti_license)
+      return rti_license
+
+  default_path = [Path.cwd()]
+  connext_home_env = os.getenv("CONNEXTDDS_DIR", os.getenv("NDDSHOME"))
+  if connext_home_env:
+    default_path.add(connext_home_env)
+  for root in default_path:
+    rti_license = _search_dir(root)
+    if rti_license:
+      return rti_license
+
+  return None
 
 
 class ConnextParticipant(Participant):
@@ -85,7 +128,18 @@ class ConnextParticipant(Participant):
     self._user_conditions = []
     self._readers = {}
     self._writers = {}
-    self.log = Logger.sublogger("dds")
+
+
+  @cached_property
+  def rti_license(self) -> Path:
+    license = self.agent.root / "rti_license.dat"
+    if not license.exists():
+      user_license = locate_rti_license(search_path=[self.agent.root])
+      if not user_license or not user_license.is_file():
+        raise RuntimeError("please specify an RTI license file")
+      license.write_bytes(user_license.read_bytes())
+      log.warning("cached RTI license: {} → {}", user_license, license)
+    return license
 
 
   def uvn_info(self,
@@ -320,7 +374,7 @@ BACKBONE:
     # HACK set NDDSHOME so that the Connext Python API finds the license file
     import os
     os.environ["NDDSHOME"] = str(self.agent.root)
-    self.log.activity("NDDSHOME: {}", os.environ["NDDSHOME"])
+    log.activity("NDDSHOME: {}", os.environ["NDDSHOME"])
 
     qos_provider = dds.QosProvider(str(self.participant_xml_config))
 
@@ -432,7 +486,6 @@ BACKBONE:
         self.agent.on_remote_writers_status(topic, online_writers)
 
     for topic, reader, query_cond in active_data:
-      # print("DATA ACTIVE READER", topic, reader)
       for s in reader.select().condition(query_cond).take():
         if s.info.valid:
           data = self._parse_data(topic, s.data)
@@ -450,11 +503,7 @@ BACKBONE:
 
 
   def _wait(self) -> tuple[bool, list[tuple[UvnTopic, dds.DataWriter]], list[tuple[UvnTopic, dds.DataReader]], list[tuple[UvnTopic, dds.DataReader, dds.ReadCondition]], list[ConnextCondition]]:
-    # log.debug("[DDS] waiting on waitset...")
     active_conditions = self._waitset.wait(dds.Duration(1))
-    # if active_conditions:
-      # print("ACTIVE CONDITIONS", len(active_conditions), active_conditions)
-    # log.debug(f"[DDS] waitset returned {len(active_conditions)} conditions")
     if len(active_conditions) == 0:
       return (False, [], [], [], [])
     assert(len(active_conditions) > 0)
@@ -484,9 +533,9 @@ BACKBONE:
         continue
       cond.trigger_value = False
       active_user.append(cond)
-    # if active_conditions:
-    #   print("ACTIVE_WRITERS", active_writers)
-    #   print("ACTIVE_READERS", active_readers)
-    #   print("ACTIVE_DATA", active_data)
-    #   print("ACTIVE_USER", active_user)
     return (False, active_writers, active_readers, active_data, active_user)
+
+
+  @property
+  def cell_agent_package_files(self) -> Generator[Path, None, None]:
+    yield self.rti_license
