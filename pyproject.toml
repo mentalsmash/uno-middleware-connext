@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "uno_middleware_connext"
+version = "1.0.0"
+description = "Middleware implementation for uno based on RTI Connext DDS"
+authors = ["Andrea Sorbini <as@mentalsmash.org>"]
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Operating System :: POSIX :: Linux"
+]
+packages = [
+  { include = "uno_middleware_connext" }
+]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+uno = "^2.0.0"
+"rti.connext" = "^7.1.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+
+[tool.pytest.ini_options]
+addopts = [
+  "--import-mode=importlib",
+]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
