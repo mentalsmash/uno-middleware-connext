@@ -2,8 +2,8 @@
 # (C) Copyright 2020-2024 Andrea Sorbini
 #
 # This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as 
-# published by the Free Software Foundation, either version 3 of the 
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version.
 #
 # This program is distributed in the hope that it will be useful,
@@ -43,6 +43,7 @@ log = Logger.sublogger("connext")
 
 def locate_rti_license(search_path: list[Path] | None = None) -> Path | None:
   searched = set()
+
   def _search_dir(root: Path):
     root = root.resolve()
     if root in searched:
@@ -130,7 +131,6 @@ class ConnextParticipant(Participant):
     self._readers = {}
     self._writers = {}
 
-
   @cached_property
   def rti_license(self) -> Path:
     license = self.root / "rti_license.dat"
@@ -142,23 +142,14 @@ class ConnextParticipant(Participant):
       log.warning("cached RTI license: {} → {}", user_license, license)
     return license
 
-
-
-  def uvn_info(self,
-      uvn: Uvn,
-      registry_id: str) -> None:
+  def uvn_info(self, uvn: Uvn, registry_id: str) -> None:
     sample = dds.DynamicData(self._types[self.TOPIC_TYPES[UvnTopic.UVN_ID]])
     sample["name"] = uvn.name
     sample["registry_id"] = registry_id
     writer = self._writers[UvnTopic.UVN_ID]
     writer.write(sample)
 
-
-  def cell_agent_config(self,
-      uvn: Uvn,
-      cell_id: int,
-      registry_id: str,
-      package: Path) -> None:
+  def cell_agent_config(self, uvn: Uvn, cell_id: int, registry_id: str, package: Path) -> None:
     sample = dds.DynamicData(self._types[self.TOPIC_TYPES[UvnTopic.BACKBONE]])
     sample["cell.n"] = cell_id
     sample["cell.uvn"] = uvn.name
@@ -168,9 +159,7 @@ class ConnextParticipant(Participant):
     writer = self._writers[UvnTopic.BACKBONE]
     writer.write(sample)
 
-
-  def _lan_descriptor(self,
-    net: LanDescriptor) -> dds.DynamicData:
+  def _lan_descriptor(self, net: LanDescriptor) -> dds.DynamicData:
     sample = dds.DynamicData(self._types["uno::NetworkInfo"])
     sample["nic"] = net.nic.name
     sample["subnet.address.value"] = ipv4_to_bytes(net.nic.subnet.network_address)
@@ -179,39 +168,32 @@ class ConnextParticipant(Participant):
     sample["gw.value"] = ipv4_to_bytes(net.gw)
     return sample
 
-
-  def cell_agent_status(self,
-      uvn: Uvn,
-      cell_id: int,
-      registry_id: str,
-      ts_start: Timestamp|None=None,
-      lans: list[LanDescriptor]|None=None,
-      known_networks: dict[LanDescriptor, bool]|None=None) -> None:
+  def cell_agent_status(
+    self,
+    uvn: Uvn,
+    cell_id: int,
+    registry_id: str,
+    ts_start: Timestamp | None = None,
+    lans: list[LanDescriptor] | None = None,
+    known_networks: dict[LanDescriptor, bool] | None = None,
+  ) -> None:
     cell = uvn.cells[cell_id]
     sample = dds.DynamicData(self._types[self.TOPIC_TYPES[UvnTopic.CELL_ID]])
     sample["id.n"] = cell.id
     sample["id.uvn"] = uvn.name
     sample["registry_id"] = registry_id
-    sample["routed_networks"] = [
-      self._lan_descriptor(lan)
-        for lan in lans or []
-    ]
+    sample["routed_networks"] = [self._lan_descriptor(lan) for lan in lans or []]
     sample["reachable_networks"] = [
-      self._lan_descriptor(lan)
-        for lan, reachable in known_networks.items()
-          if reachable
+      self._lan_descriptor(lan) for lan, reachable in known_networks.items() if reachable
     ]
     sample["unreachable_networks"] = [
-      self._lan_descriptor(lan)
-        for lan, reachable in known_networks.items()
-          if not reachable
+      self._lan_descriptor(lan) for lan, reachable in known_networks.items() if not reachable
     ]
     if ts_start is not None:
       sample["ts_start"] = ts_start.from_epoch()
 
     writer = self._writers[UvnTopic.CELL_ID]
     writer.write(sample)
-
 
   def _parse_data(self, topic: UvnTopic, data: object) -> dict:
     """\
@@ -245,6 +227,7 @@ BACKBONE:
         "registry_id": data["registry_id"],
       }
     elif topic == UvnTopic.CELL_ID:
+
       def _site_to_descriptor(site):
         subnet_addr = ipv4_from_bytes(site["subnet.address.value"])
         subnet_mask = site["subnet.mask"]
@@ -260,7 +243,7 @@ BACKBONE:
           },
           "gw": gw,
         }
-    
+
       def _site_to_lan_status(site, reachable):
         return (
           self.agent.new_child(LanDescriptor, _site_to_descriptor(site), save=False),
@@ -268,10 +251,12 @@ BACKBONE:
         )
 
       routed_networks = [_site_to_descriptor(s) for s in data["routed_networks"]]
-      known_networks = dict((
-        *(_site_to_lan_status(s, False) for s in data["unreachable_networks"]),
-        *(_site_to_lan_status(s, True) for s in data["reachable_networks"]),
-      ))
+      known_networks = dict(
+        (
+          *(_site_to_lan_status(s, False) for s in data["unreachable_networks"]),
+          *(_site_to_lan_status(s, True) for s in data["reachable_networks"]),
+        )
+      )
 
       return {
         "uvn": data["id.uvn"],
@@ -289,7 +274,6 @@ BACKBONE:
         "package": data["package"],
       }
 
-
   @cached_property
   def participant_xml_config(self) -> Path:
     config = self.root / "uno_qos_profiles.xml"
@@ -299,83 +283,88 @@ BACKBONE:
       self._generate_dds_xml_config_cell(config)
     return config
 
-
   def _generate_dds_xml_config_uvn(self, output: Path) -> None:
     key_id = KeyId.from_uvn(self.registry.uvn)
     from . import data
+
     with as_file(files(data).joinpath("uno.xml")) as tmplt_str:
       tmplt = Templates.compile(tmplt_str.read_text())
-    Templates.generate(output, tmplt, {
-      "uvn": self.registry.uvn,
-      "cell": None,
-      "initial_peers": [f"[0]@{p}" for p in self.initial_peers],
-      "timing": self.registry.uvn.settings.timing_profile,
-      "license_file": self.rti_license.read_text(),
-      "ca_cert": self.registry.id_db.backend.ca.cert,
-      "perm_ca_cert": self.registry.id_db.backend.perm_ca.cert,
-      "cert": self.registry.id_db.backend.cert(key_id),
-      "key": self.registry.id_db.backend.key(key_id),
-      "governance": self.registry.id_db.backend.governance,
-      "permissions": self.registry.id_db.backend.permissions(key_id),
-      "enable_dds_security": self.registry.uvn.settings.enable_dds_security,
-      "domain": self.registry.uvn.settings.dds_domain,
-      "domain_tag": self.registry.uvn.name,
-      "rti_license": self.registry.rti_license,
-    })
-  
+    Templates.generate(
+      output,
+      tmplt,
+      {
+        "uvn": self.registry.uvn,
+        "cell": None,
+        "initial_peers": [f"[0]@{p}" for p in self.initial_peers],
+        "timing": self.registry.uvn.settings.timing_profile,
+        "license_file": self.rti_license.read_text(),
+        "ca_cert": self.registry.id_db.backend.ca.cert,
+        "perm_ca_cert": self.registry.id_db.backend.perm_ca.cert,
+        "cert": self.registry.id_db.backend.cert(key_id),
+        "key": self.registry.id_db.backend.key(key_id),
+        "governance": self.registry.id_db.backend.governance,
+        "permissions": self.registry.id_db.backend.permissions(key_id),
+        "enable_dds_security": self.registry.uvn.settings.enable_dds_security,
+        "domain": self.registry.uvn.settings.dds_domain,
+        "domain_tag": self.registry.uvn.name,
+        "rti_license": self.registry.rti_license,
+      },
+    )
 
   def _generate_dds_xml_config_cell(self, output: Path) -> None:
     key_id = KeyId.from_uvn(self.owner)
     from . import data
+
     with as_file(files(data).joinpath("uno.xml")) as tmplt_str:
       tmplt = Templates.compile(tmplt_str.read_text())
-    Templates.generate(output, tmplt, {
-      "uvn": self.registry.uvn,
-      "cell": self.owner,
-      "initial_peers": [f"[0]@{p}" for p in self.initial_peers],
-      "timing": self.registry.uvn.settings.timing_profile,
-      "license_file": self.rti_license.read_text(),
-      "ca_cert": self.registry.id_db.backend.ca.cert,
-      "perm_ca_cert": self.registry.id_db.backend.perm_ca.cert,
-      "cert": self.registry.id_db.backend.cert(key_id),
-      "key": self.registry.id_db.backend.key(key_id),
-      "governance": self.registry.id_db.backend.governance,
-      "permissions": self.registry.id_db.backend.permissions(key_id),
-      "enable_dds_security": self.registry.uvn.settings.enable_dds_security,
-      "domain": self.registry.uvn.settings.dds_domain,
-      "domain_tag": self.registry.uvn.name,
-      "rti_license": self.rti_license,
-    })
-
+    Templates.generate(
+      output,
+      tmplt,
+      {
+        "uvn": self.registry.uvn,
+        "cell": self.owner,
+        "initial_peers": [f"[0]@{p}" for p in self.initial_peers],
+        "timing": self.registry.uvn.settings.timing_profile,
+        "license_file": self.rti_license.read_text(),
+        "ca_cert": self.registry.id_db.backend.ca.cert,
+        "perm_ca_cert": self.registry.id_db.backend.perm_ca.cert,
+        "cert": self.registry.id_db.backend.cert(key_id),
+        "key": self.registry.id_db.backend.key(key_id),
+        "governance": self.registry.id_db.backend.governance,
+        "permissions": self.registry.id_db.backend.permissions(key_id),
+        "enable_dds_security": self.registry.uvn.settings.enable_dds_security,
+        "domain": self.registry.uvn.settings.dds_domain,
+        "domain_tag": self.registry.uvn.name,
+        "rti_license": self.rti_license,
+      },
+    )
 
   def start(self) -> None:
     # HACK set NDDSHOME so that the Connext Python API finds the license file
     import os
+
     os.environ["NDDSHOME"] = str(self.root)
     log.activity("NDDSHOME: {}", os.environ["NDDSHOME"])
 
     qos_provider = dds.QosProvider(str(self.participant_xml_config))
 
     self._types = {
-      t: qos_provider.type(qos_provider.type_libraries[0], t)
-        for t in self.REGISTERED_TYPES
+      t: qos_provider.type(qos_provider.type_libraries[0], t) for t in self.REGISTERED_TYPES
     }
     self._dp = qos_provider.create_participant_from_config(self.PARTICIPANT_PROFILE)
 
     writers = {}
     writer_conditions = {}
     for topic in self.topics["writers"]:
-      writer = dds.DynamicData.DataWriter(
-        self._dp.find_datawriter(self.WRITER_NAMES[topic])
-      )
+      writer = dds.DynamicData.DataWriter(self._dp.find_datawriter(self.WRITER_NAMES[topic]))
       if writer is None:
         raise RuntimeError("failed to lookup writer", topic)
       writers[topic] = writer
       status_condition = dds.StatusCondition(writer)
       status_condition.enabled_statuses = (
-        dds.StatusMask.PUBLICATION_MATCHED | 
-        dds.StatusMask.LIVELINESS_LOST |
-        dds.StatusMask.OFFERED_INCOMPATIBLE_QOS
+        dds.StatusMask.PUBLICATION_MATCHED
+        | dds.StatusMask.LIVELINESS_LOST
+        | dds.StatusMask.OFFERED_INCOMPATIBLE_QOS
       )
       writer_conditions[topic] = status_condition
     self._writers = writers
@@ -386,18 +375,16 @@ BACKBONE:
     data_conditions = {}
     data_state = dds.DataState(dds.SampleState.NOT_READ)
     for topic in self.topics["readers"]:
-      reader = dds.DynamicData.DataReader(
-        self._dp.find_datareader(self.READER_NAMES[topic])
-      )
+      reader = dds.DynamicData.DataReader(self._dp.find_datareader(self.READER_NAMES[topic]))
       if reader is None:
         raise RuntimeError("failed to lookup reader", topic)
       readers[topic] = reader
 
       status_condition = dds.StatusCondition(reader)
       status_condition.enabled_statuses = (
-        dds.StatusMask.SUBSCRIPTION_MATCHED | 
-        dds.StatusMask.LIVELINESS_CHANGED |
-        dds.StatusMask.REQUESTED_INCOMPATIBLE_QOS
+        dds.StatusMask.SUBSCRIPTION_MATCHED
+        | dds.StatusMask.LIVELINESS_CHANGED
+        | dds.StatusMask.REQUESTED_INCOMPATIBLE_QOS
       )
       reader_conditions[topic] = status_condition
       data_conditions[topic] = dds.ReadCondition(reader, data_state)
@@ -407,15 +394,14 @@ BACKBONE:
     self._user_conditions = [svc.updated_condition for svc in self.agent.services]
     self._waitset = dds.WaitSet()
     for condition in (
-        self._exit_condition,
-        *self._writer_conditions.values(),
-        *self._reader_conditions.values(),
-        *self._data_conditions.values(),
-        *(c._condition for c in self._user_conditions)):
+      self._exit_condition,
+      *self._writer_conditions.values(),
+      *self._reader_conditions.values(),
+      *self._data_conditions.values(),
+      *(c._condition for c in self._user_conditions),
+    ):
       self._waitset += condition
       self._waitset_attached.append(condition)
-
-
 
   def stop(self) -> None:
     for condition in list(self._waitset_attached):
@@ -434,7 +420,6 @@ BACKBONE:
     self._user_conditions = []
     self._dp = None
 
-
   def spin(self) -> bool:
     done, active_writers, active_readers, active_data, active_user = self._wait()
     if done:
@@ -444,47 +429,58 @@ BACKBONE:
       # Read and reset status flags
       # We don't do anything with writer events for now
       status_mask = writer.status_changes
-      pub_matched = writer.publication_matched_status
-      liv_lost = writer.liveliness_lost_status
-      qos_error = writer.offered_incompatible_qos_status
-
+      _ = writer.publication_matched_status
+      _ = writer.liveliness_lost_status
+      _ = writer.offered_incompatible_qos_status
 
     for topic, reader in active_readers:
       # Read and reset status flags
       status_mask = reader.status_changes
-      sub_matched = reader.subscription_matched_status
-      liv_changed = reader.liveliness_changed_status
-      qos_error = reader.requested_incompatible_qos_status
+      _ = reader.subscription_matched_status
+      _ = reader.liveliness_changed_status
+      _ = reader.requested_incompatible_qos_status
 
-      if ((dds.StatusMask.LIVELINESS_CHANGED in status_mask
-          or dds.StatusMask.SUBSCRIPTION_MATCHED in status_mask)):
-        online_writers = [
-          ConnextHandle(ih_dw) for ih_dw in reader.matched_publications
-        ]
+      if (
+        dds.StatusMask.LIVELINESS_CHANGED in status_mask
+        or dds.StatusMask.SUBSCRIPTION_MATCHED in status_mask
+      ):
+        online_writers = [ConnextHandle(ih_dw) for ih_dw in reader.matched_publications]
         self.agent.on_remote_writers_status(topic, online_writers)
 
     for topic, reader, query_cond in active_data:
       for s in reader.select().condition(query_cond).take():
         if s.info.valid:
           data = self._parse_data(topic, s.data)
-          self.agent.on_data(topic, data,
+          self.agent.on_data(
+            topic,
+            data,
             instance=ConnextHandle(s.info.instance_handle),
-            writer=ConnextHandle(s.info.publication_handle))
-        elif (s.info.state.instance_state == dds.InstanceState.NOT_ALIVE_DISPOSED
-              or s.info.state.instance_state == dds.InstanceState.NOT_ALIVE_NO_WRITERS):
+            writer=ConnextHandle(s.info.publication_handle),
+          )
+        elif (
+          s.info.state.instance_state == dds.InstanceState.NOT_ALIVE_DISPOSED
+          or s.info.state.instance_state == dds.InstanceState.NOT_ALIVE_NO_WRITERS
+        ):
           self.agent.on_instance_offline(topic, ConnextHandle(s.info.instance_handle))
 
     for user_cond in active_user:
       self.agent.on_condition_active(user_cond)
-    
+
     return False
 
-
-  def _wait(self) -> tuple[bool, list[tuple[UvnTopic, dds.DataWriter]], list[tuple[UvnTopic, dds.DataReader]], list[tuple[UvnTopic, dds.DataReader, dds.ReadCondition]], list[ConnextCondition]]:
+  def _wait(
+    self,
+  ) -> tuple[
+    bool,
+    list[tuple[UvnTopic, dds.DataWriter]],
+    list[tuple[UvnTopic, dds.DataReader]],
+    list[tuple[UvnTopic, dds.DataReader, dds.ReadCondition]],
+    list[ConnextCondition],
+  ]:
     active_conditions = self._waitset.wait(dds.Duration(1))
     if len(active_conditions) == 0:
       return (False, [], [], [], [])
-    assert(len(active_conditions) > 0)
+    assert len(active_conditions) > 0
     if self._exit_condition in active_conditions:
       self._exit_condition.trigger_value = False
       return (True, [], [], [], [])
@@ -492,18 +488,20 @@ BACKBONE:
     active_writers = [
       (topic, self._writers[topic])
       for topic, cond in self._writer_conditions.items()
-        if cond in active_conditions
+      if cond in active_conditions
     ]
     active_readers = sorted(
-      ((topic, self._readers[topic])
-      for topic, cond in self._reader_conditions.items()
-        if cond in active_conditions),
-      key=lambda t: self.READERS_PROCESSING_ORDER[t[0]]
+      (
+        (topic, self._readers[topic])
+        for topic, cond in self._reader_conditions.items()
+        if cond in active_conditions
+      ),
+      key=lambda t: self.READERS_PROCESSING_ORDER[t[0]],
     )
     active_data = [
       (topic, self._readers[topic], self._data_conditions[topic])
       for topic, cond in self._data_conditions.items()
-        if cond in active_conditions
+      if cond in active_conditions
     ]
     active_user = []
     for cond in self._user_conditions:
@@ -513,15 +511,12 @@ BACKBONE:
       active_user.append(cond)
     return (False, active_writers, active_readers, active_data, active_user)
 
-
   def install(self) -> None:
     _ = self.rti_license
-
 
   @property
   def cell_agent_package_files(self) -> Generator[Path, None, None]:
     yield self.rti_license
-
 
   def agent_install_guide_section(self) -> str | None:
     return None

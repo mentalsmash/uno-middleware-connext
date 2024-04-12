@@ -2,8 +2,8 @@
 # (C) Copyright 2020-2024 Andrea Sorbini
 #
 # This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as 
-# published by the Free Software Foundation, either version 3 of the 
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version.
 #
 # This program is distributed in the hope that it will be useful,
@@ -19,6 +19,7 @@ from uno.middleware import Middleware
 from .connext_condition import ConnextCondition
 from .connext_participant import ConnextParticipant
 
+
 class ConnextMiddleware(Middleware):
   CONDITION = ConnextCondition
   PARTICIPANT = ConnextParticipant
@@ -26,16 +27,14 @@ class ConnextMiddleware(Middleware):
   @property
   def install_instructions(self) -> str | None:
     import uno_middleware_connext
+
     return """\
 # Install RTI Connext DDS middleware
 pip install git+https://github.com/mentalsmash/uno-middleware-connext@{version}
 """.format(version=uno_middleware_connext.__version__)
-
 
   def define_uvn_instructions(self) -> str | None:
     return """\
 # Point uno to a valid RTI license file
 export RTI_LICENSE_FILE=/path/to/rti_license.dat
 """.format()
-
-
