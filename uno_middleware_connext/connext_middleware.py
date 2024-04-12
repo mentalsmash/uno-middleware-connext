@@ -33,10 +33,9 @@ pip install git+https://github.com/mentalsmash/uno-middleware-connext@{version}
 
 
   def define_uvn_instructions(self) -> str | None:
-    import uno_middleware_connext
     return """\
 # Point uno to a valid RTI license file
 export RTI_LICENSE_FILE=/path/to/rti_license.dat
-""".format(version=uno_middleware_connext.__version__)
+""".format()
 
 

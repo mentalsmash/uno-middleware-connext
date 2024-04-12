@@ -32,7 +32,6 @@ from uno.registry.cell import Cell
 from uno.registry.lan_descriptor import LanDescriptor
 from uno.registry.key_id import KeyId
 from uno.core.render import Templates
-from uno.core.wg import WireGuardConfig
 
 from uno.middleware import Participant
 
